@@ -1,5 +1,6 @@
 // API Configuration
-const API_BASE_URL = 'https://open.anycorp.dev/v1';
+// Use proxy in development to avoid CORS issues
+const API_BASE_URL = '/api/v1';
 const DEFAULT_API_KEY = 'sk-public';
 
 // Text Models with friendly names

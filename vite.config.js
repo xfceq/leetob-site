@@ -7,6 +7,14 @@ export default defineConfig({
     port: 3000,
     host: '0.0.0.0',
     open: true,
-    strictPort: false
+    strictPort: false,
+    proxy: {
+      '/api': {
+        target: 'https://open.anycorp.dev',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        secure: true,
+      }
+    }
   }
 })

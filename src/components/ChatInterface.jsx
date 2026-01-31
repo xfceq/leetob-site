@@ -21,7 +21,7 @@ import useChatStore from '../store';
 import { streamChatCompletion, generateImage, TEXT_MODELS, streamWebSearchCompletion, extractUrls } from '../api';
 import { agentManager } from '../AgentManager';
 import CodeBlock, { InlineCode } from './CodeBlock';
-import { ChatImage } from './Gallery';
+import { ChatImage, ImageModal } from './Gallery';
 
 // Helper to convert file to base64
 const fileToBase64 = (file) => {
@@ -118,7 +118,7 @@ const createMarkdownComponents = () => ({
 });
 
 // Message component with remake option - memoized for performance
-const Message = memo(function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking, isStreaming }) {
+const Message = memo(function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking, isStreaming, onImageClick }) {
   const isUser = message.role === 'user';
   const contentRef = useRef(null);
   const [shouldCollapse, setShouldCollapse] = useState(false);
@@ -161,7 +161,7 @@ const Message = memo(function Message({ message, isCollapsed, onToggleCollapse, 
       >
         <div ref={contentRef}>
           {message.type === 'image' && message.image ? (
-            <ChatImage image={message.image} />
+            <ChatImage image={message.image} onClick={() => onImageClick(message.image)} />
           ) : (
             <div className="prose-chat">
               <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
@@ -299,6 +299,7 @@ export default function ChatInterface() {
   const [isEnhanceHovered, setIsEnhanceHovered] = useState(false);
   const [isWebSearchHovered, setIsWebSearchHovered] = useState(false);
   const [attachments, setAttachments] = useState([]);
+  const [fullscreenImage, setFullscreenImage] = useState(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const dropZoneRef = useRef(null);
@@ -765,6 +766,7 @@ export default function ChatInterface() {
                 onRemake={message.role === 'assistant' ? handleRemake : null}
                 isRemaking={remakingMessageId === message.id}
                 isStreaming={streamingMessageId === message.id}
+                onImageClick={setFullscreenImage}
               />
             ))}
             {isWaitingForResponse && <TypingIndicator />}
@@ -906,6 +908,12 @@ export default function ChatInterface() {
 
         </div>
       </div>
+      {/* Fullscreen Image Modal */}
+      <ImageModal
+        isOpen={!!fullscreenImage}
+        onClose={() => setFullscreenImage(null)}
+        image={fullscreenImage}
+      />
     </div>
   );
 }

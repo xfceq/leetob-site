@@ -10,9 +10,33 @@ import {
 } from 'lucide-react';
 import useChatStore from '../store';
 
-// Full Image Modal - Animated
-function ImageModal({ isOpen, onClose, image }) {
+// Full Image Modal - Animated (exported for use in ChatInterface)
+export function ImageModal({ isOpen, onClose, image }) {
   const [copied, setCopied] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  // Handle close with animation
+  const handleClose = React.useCallback(() => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 200); // Match animation duration
+  }, [onClose]);
+
+  // Handle Escape key to close
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen && !isClosing) {
+        handleClose();
+      }
+    };
+    
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, isClosing, handleClose]);
 
   if (!isOpen || !image) return null;
 
@@ -47,31 +71,43 @@ function ImageModal({ isOpen, onClose, image }) {
     document.body.removeChild(link);
   };
 
+  const handleBackgroundClick = (e) => {
+    if (e.target === e.currentTarget && !isClosing) {
+      e.stopPropagation();
+      handleClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black flex items-center justify-center z-50 p-4 animate-fade-in">
-      <div className="relative max-w-5xl max-h-[90vh] flex flex-col animate-scale-in">
-        {/* Controls */}
+    <div
+      className={`fixed inset-0 bg-black/95 flex items-center justify-center z-[100] p-4 ${isClosing ? 'animate-fade-out' : 'animate-fade-in'}`}
+      onClick={handleBackgroundClick}
+    >
+      {/* Fixed close button in top-right corner of screen */}
+      <button
+        onClick={(e) => { e.stopPropagation(); handleClose(); }}
+        className="fixed top-4 right-4 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all press-effect z-[101]"
+        title="Close (Esc)"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
+      <div className={`relative max-w-5xl max-h-[90vh] flex flex-col ${isClosing ? 'animate-scale-out' : 'animate-scale-in'}`} onClick={e => e.stopPropagation()}>
+        {/* Controls on image */}
         <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
           <button
             onClick={handleCopy}
-            className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all press-effect"
+            className="p-2.5 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all press-effect backdrop-blur-sm"
             title="Copy"
           >
             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
           </button>
           <button
             onClick={handleDownload}
-            className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all press-effect"
+            className="p-2.5 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all press-effect backdrop-blur-sm"
             title="Download"
           >
             <Download className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all press-effect"
-            title="Close"
-          >
-            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -99,6 +135,24 @@ export default function Gallery({ isOpen, onClose }) {
   const { gallery, removeFromGallery, clearGallery } = useChatStore();
   const [selectedImage, setSelectedImage] = useState(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  // Handle close with animation
+  const handleClose = React.useCallback(() => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 200);
+  }, [onClose, isClosing]);
+
+  // Reset selected image when gallery closes
+  React.useEffect(() => {
+    if (!isOpen) {
+      setSelectedImage(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -113,8 +167,8 @@ export default function Gallery({ isOpen, onClose }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className={`modal-overlay ${isClosing ? 'animate-fade-out' : ''}`} onClick={handleClose}>
+      <div className={`modal-content w-full max-w-4xl max-h-[85vh] flex flex-col ${isClosing ? 'animate-scale-out' : ''}`} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
           <div className="animate-fade-in-up">
@@ -134,7 +188,7 @@ export default function Gallery({ isOpen, onClose }) {
                 {confirmClear ? 'Confirm' : 'Clear'}
               </button>
             )}
-            <button onClick={onClose} className="btn-icon">
+            <button onClick={handleClose} className="btn-icon">
               <X className="w-4 h-4" />
             </button>
           </div>

@@ -760,6 +760,46 @@ button, a, input, textarea, select, .btn-primary, .btn-ghost, .btn-icon,
   animation: textAppear 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Fade out animations for smooth closing */
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes scaleOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+
+.animate-fade-out {
+  animation: fadeOut 0.2s ease forwards;
+}
+
+.animate-scale-out {
+  animation: scaleOut 0.2s ease forwards;
+}
+
+.animate-slide-out-right {
+  animation: slideOutRight 0.25s ease forwards;
+}
+
 @keyframes textAppear {
   0% {
     opacity: 0;

@@ -25,6 +25,17 @@ function SettingsModal({ isOpen, onClose }) {
   const [localSystemPrompt, setLocalSystemPrompt] = useState(settings.systemPrompt);
   const [localTemperature, setLocalTemperature] = useState(settings.temperature);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  // Handle close with animation
+  const handleClose = React.useCallback(() => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onClose();
+    }, 200);
+  }, [onClose, isClosing]);
 
   if (!isOpen) return null;
 
@@ -34,7 +45,7 @@ function SettingsModal({ isOpen, onClose }) {
       systemPrompt: localSystemPrompt,
       temperature: localTemperature,
     });
-    onClose();
+    handleClose();
   };
 
   const handleDeleteAllChats = () => {
@@ -45,11 +56,11 @@ function SettingsModal({ isOpen, onClose }) {
   const unpinnedCount = chats.filter(c => !c.pinned).length;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content w-full max-w-sm" onClick={e => e.stopPropagation()}>
+    <div className={`modal-overlay ${isClosing ? 'animate-fade-out' : ''}`} onClick={handleClose}>
+      <div className={`modal-content w-full max-w-sm ${isClosing ? 'animate-scale-out' : ''}`} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
           <h2 className="text-base font-medium text-white">Settings</h2>
-          <button onClick={onClose} className="btn-icon">
+          <button onClick={handleClose} className="btn-icon">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -144,7 +155,7 @@ function SettingsModal({ isOpen, onClose }) {
         </div>
 
         <div className="flex gap-3 px-5 py-4 border-t border-white/5">
-          <button onClick={onClose} className="btn-ghost flex-1 press-effect">
+          <button onClick={handleClose} className="btn-ghost flex-1 press-effect">
             Cancel
           </button>
           <button onClick={handleSave} className="btn-primary flex-1 press-effect">

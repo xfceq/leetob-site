@@ -11,17 +11,20 @@ import {
   ChevronDown,
   Zap,
   Sparkles,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import useChatStore from '../store';
 import { TEXT_MODELS, IMAGE_MODELS } from '../api';
 
 // Settings Modal - Glassmorphism
 function SettingsModal({ isOpen, onClose }) {
-  const { settings, updateSettings } = useChatStore();
+  const { settings, updateSettings, deleteAllChats, chats } = useChatStore();
   const [showApiKey, setShowApiKey] = useState(false);
   const [localApiKey, setLocalApiKey] = useState(settings.apiKey);
   const [localSystemPrompt, setLocalSystemPrompt] = useState(settings.systemPrompt);
   const [localTemperature, setLocalTemperature] = useState(settings.temperature);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!isOpen) return null;
 
@@ -33,6 +36,13 @@ function SettingsModal({ isOpen, onClose }) {
     });
     onClose();
   };
+
+  const handleDeleteAllChats = () => {
+    deleteAllChats();
+    setShowDeleteConfirm(false);
+  };
+
+  const unpinnedCount = chats.filter(c => !c.pinned).length;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -98,6 +108,38 @@ function SettingsModal({ isOpen, onClose }) {
               onChange={(e) => setLocalTemperature(parseFloat(e.target.value))}
               className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-white"
             />
+          </div>
+
+          {/* Delete All Chats */}
+          <div className="animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            <label className="block text-xs text-white/40 uppercase tracking-wide mb-2">
+              Danger Zone
+            </label>
+            {showDeleteConfirm ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="btn-ghost flex-1 text-xs press-effect"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAllChats}
+                  className="flex-1 py-2 px-3 rounded-xl bg-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/30 press-effect"
+                >
+                  Confirm Delete
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={unpinnedCount === 0}
+                className="w-full py-2 px-3 rounded-xl glass text-red-400/70 text-xs font-medium hover:bg-red-500/10 hover:text-red-400 press-effect disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete All Chats ({unpinnedCount} unpinned)
+              </button>
+            )}
           </div>
         </div>
 
@@ -178,6 +220,7 @@ export default function Sidebar() {
     createChat,
     selectChat,
     deleteChat,
+    pinChat,
     updateSettings,
     getSortedChats,
   } = useChatStore();
@@ -233,8 +276,8 @@ export default function Sidebar() {
           </div>
 
           {/* New Chat */}
-          <button 
-            onClick={handleNewChat} 
+          <button
+            onClick={handleNewChat}
             className="btn-primary w-full flex items-center justify-center gap-2 text-sm hover-lift"
           >
             <Plus className="w-4 h-4" />
@@ -281,19 +324,39 @@ export default function Sidebar() {
                   style={{ animationDelay: `${index * 40}ms` }}
                   onClick={() => handleSelectChat(chat.id)}
                 >
-                  <MessageSquare className="w-4 h-4 flex-shrink-0 opacity-50" />
+                  {chat.pinned ? (
+                    <Pin className="w-4 h-4 flex-shrink-0 text-white/60" />
+                  ) : (
+                    <MessageSquare className="w-4 h-4 flex-shrink-0 opacity-50" />
+                  )}
                   <span className="flex-1 truncate text-sm">{chat.title}</span>
                   
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteChat(chat.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded-lg glass hover:text-red-400 transition-all"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        pinChat(chat.id);
+                      }}
+                      className="p-1 rounded-lg glass hover:text-white/80 transition-all"
+                      title={chat.pinned ? "Unpin" : "Pin"}
+                    >
+                      {chat.pinned ? (
+                        <PinOff className="w-3 h-3" />
+                      ) : (
+                        <Pin className="w-3 h-3" />
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteChat(chat.id);
+                      }}
+                      className="p-1 rounded-lg glass hover:text-red-400 transition-all"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

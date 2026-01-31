@@ -34,6 +34,14 @@ export const useChatStore = create(
 
       // Actions - Chats
       createChat: () => {
+        const state = get();
+        // Check if current chat is empty - don't create new one
+        const currentChat = state.chats.find(c => c.id === state.currentChatId);
+        if (currentChat && currentChat.messages.length === 0 && currentChat.title === 'New Chat') {
+          // Current chat is empty, just return its id
+          return currentChat.id;
+        }
+        
         const newChat = {
           id: generateId(),
           title: 'New Chat',
@@ -73,6 +81,18 @@ export const useChatStore = create(
             chat.id === chatId ? { ...chat, pinned: !chat.pinned } : chat
           ),
         }));
+      },
+
+      deleteAllChats: () => {
+        set(state => {
+          // Keep only pinned chats
+          const pinnedChats = state.chats.filter(c => c.pinned);
+          const newCurrentId = pinnedChats[0]?.id || null;
+          return {
+            chats: pinnedChats,
+            currentChatId: newCurrentId,
+          };
+        });
       },
 
       updateChatTitle: (chatId, title) => {

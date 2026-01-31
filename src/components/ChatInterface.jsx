@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
   ArrowUp,
@@ -14,12 +14,56 @@ import {
   Upload,
   RefreshCw,
   PanelLeftClose,
+  X,
 } from 'lucide-react';
 import useChatStore from '../store';
 import { streamChatCompletion, generateImage, TEXT_MODELS } from '../api';
 import { agentManager } from '../AgentManager';
 import CodeBlock, { InlineCode } from './CodeBlock';
 import { ChatImage } from './Gallery';
+
+// Helper to convert file to base64
+const fileToBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
+// Attachment preview component
+function AttachmentPreview({ attachments, onRemove }) {
+  if (attachments.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2 p-2 border-b border-white/10">
+      {attachments.map((attachment, index) => (
+        <div key={index} className="relative group">
+          {attachment.type === 'image' ? (
+            <img
+              src={attachment.data}
+              alt={attachment.name}
+              className="w-16 h-16 object-cover rounded-lg border border-white/10"
+            />
+          ) : (
+            <div className="w-16 h-16 flex items-center justify-center rounded-lg bg-white/5 border border-white/10">
+              <span className="text-[10px] text-white/50 text-center px-1 truncate">
+                {attachment.name}
+              </span>
+            </div>
+          )}
+          <button
+            onClick={() => onRemove(index)}
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-white/20 hover:bg-white/40 backdrop-blur-sm rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200"
+          >
+            <X className="w-3 h-3 text-white/80" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // AI-Powered Prompt Enhancer
 const enhancePromptWithAI = async (prompt, isImageMode, apiKey, currentModel) => {
@@ -52,20 +96,41 @@ const enhancePromptWithAI = async (prompt, isImageMode, apiKey, currentModel) =>
   }
 };
 
-// Message component with remake option
-function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking }) {
+// Memoized markdown components to prevent recreation on each render
+const createMarkdownComponents = () => ({
+  code({ node, inline, className, children, ...props }) {
+    const match = /language-(\w+)/.exec(className || '');
+    const language = match ? match[1] : '';
+    const code = String(children).replace(/\n$/, '');
+
+    if (!inline && (language || code.includes('\n'))) {
+      return <CodeBlock code={code} language={language} />;
+    }
+    return <InlineCode {...props}>{children}</InlineCode>;
+  },
+  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 opacity-70 hover:opacity-100">
+      {children}
+    </a>
+  ),
+});
+
+// Message component with remake option - memoized for performance
+const Message = memo(function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking, isStreaming }) {
   const isUser = message.role === 'user';
   const contentRef = useRef(null);
   const [shouldCollapse, setShouldCollapse] = useState(false);
   const [showRemakeMenu, setShowRemakeMenu] = useState(false);
   const remakeMenuRef = useRef(null);
 
+  // Only check height when message is complete (not streaming)
   useEffect(() => {
-    if (contentRef.current && !isUser) {
+    if (contentRef.current && !isUser && !isStreaming) {
       const height = contentRef.current.scrollHeight;
       setShouldCollapse(height > 200);
     }
-  }, [message.content, isUser]);
+  }, [message.content, isUser, isStreaming]);
 
   // Close remake menu when clicking outside
   useEffect(() => {
@@ -81,31 +146,11 @@ function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking 
     }
   }, [showRemakeMenu]);
 
-  const markdownComponents = {
-    code({ node, inline, className, children, ...props }) {
-      const match = /language-(\w+)/.exec(className || '');
-      const language = match ? match[1] : '';
-      const code = String(children).replace(/\n$/, '');
-
-      if (!inline && (language || code.includes('\n'))) {
-        return <CodeBlock code={code} language={language} />;
-      }
-      return <InlineCode {...props}>{children}</InlineCode>;
-    },
-    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-    a: ({ href, children }) => (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 opacity-70 hover:opacity-100 transition-opacity">
-        {children}
-      </a>
-    ),
-  };
+  // Memoize markdown components
+  const markdownComponents = useMemo(() => createMarkdownComponents(), []);
 
   return (
     <div className={`flex items-start gap-2 ${isUser ? 'justify-end' : 'justify-start'} group relative`}>
-      {/* Left dot for AI messages */}
-      {!isUser && (
-        <div className="w-1.5 h-1.5 rounded-full bg-white/20 mt-3 flex-shrink-0" />
-      )}
       
       <div
         className={`message-bubble ${isUser ? 'message-user' : 'message-assistant'} ${
@@ -123,8 +168,8 @@ function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking 
           )}
         </div>
 
-        {/* Collapse/Expand button */}
-        {shouldCollapse && (
+        {/* Collapse/Expand button - only show when not streaming */}
+        {shouldCollapse && !isStreaming && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -146,8 +191,8 @@ function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking 
         <div className="w-1.5 h-1.5 rounded-full bg-white/20 mt-3 flex-shrink-0" />
       )}
 
-      {/* Remake button for AI messages */}
-      {!isUser && onRemake && (
+      {/* Remake button for AI messages - only show when not streaming */}
+      {!isUser && onRemake && !isStreaming && (
         <div className="relative self-start mt-1" ref={remakeMenuRef}>
           <button
             onClick={() => setShowRemakeMenu(!showRemakeMenu)}
@@ -164,16 +209,16 @@ function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking 
 
           {/* Remake dropdown */}
           {showRemakeMenu && (
-            <div className="remake-dropdown">
+            <div className="remake-dropdown max-h-[300px] overflow-y-auto">
               <p className="px-3 py-1 text-[10px] text-white/30 uppercase tracking-wide">Remake with</p>
-              {Object.entries(TEXT_MODELS).slice(0, 5).map(([id, name]) => (
+              {Object.entries(TEXT_MODELS).map(([id, name]) => (
                 <button
                   key={id}
                   onClick={() => {
                     onRemake(message.id, id);
                     setShowRemakeMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left text-xs text-white/60 hover:text-white hover:bg-white/5 transition-colors"
+                  className="w-full px-3 py-2 text-left text-xs text-white/60 hover:text-white hover:bg-white/5"
                 >
                   {name}
                 </button>
@@ -184,17 +229,45 @@ function Message({ message, isCollapsed, onToggleCollapse, onRemake, isRemaking 
       )}
     </div>
   );
-}
+});
 
-// Typing indicator
+// Typing indicator with smooth wave animation
 function TypingIndicator() {
+  const barStyle = (delay) => ({
+    display: 'inline-block',
+    width: '3px',
+    borderRadius: '3px',
+    background: 'linear-gradient(to top, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.9))',
+    animation: 'thinkingWave 1.2s ease-in-out infinite',
+    animationDelay: `${delay}s`,
+    transition: 'none',
+  });
+
+  const textStyle = {
+    fontSize: '12px',
+    fontWeight: '500',
+    letterSpacing: '0.5px',
+    background: 'linear-gradient(90deg, rgba(255,255,255,0.3), rgba(255,255,255,0.8), rgba(255,255,255,0.3))',
+    backgroundSize: '200% 100%',
+    WebkitBackgroundClip: 'text',
+    backgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    animation: 'thinkingTextShimmer 2s linear infinite',
+    transition: 'none',
+  };
+
   return (
-    <div className="flex gap-3 justify-start animate-fade-in">
+    <div className="flex items-start gap-2 justify-start animate-fade-in">
       <div className="message-bubble message-assistant">
-        <div className="typing-indicator">
-          <div className="typing-dot" />
-          <div className="typing-dot" />
-          <div className="typing-dot" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '4px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '18px' }}>
+            <span style={barStyle(0)} />
+            <span style={barStyle(0.1)} />
+            <span style={barStyle(0.2)} />
+            <span style={barStyle(0.3)} />
+            <span style={barStyle(0.4)} />
+          </div>
+          <span style={textStyle}>Thinking</span>
         </div>
       </div>
     </div>
@@ -221,14 +294,17 @@ export default function ChatInterface() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState(null);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [collapsedMessages, setCollapsedMessages] = useState(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [remakingMessageId, setRemakingMessageId] = useState(null);
   const [isEnhanceHovered, setIsEnhanceHovered] = useState(false);
+  const [attachments, setAttachments] = useState([]);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const dropZoneRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const currentChat = getCurrentChat();
   const isImageMode = settings.generationMode === 'image';
@@ -294,17 +370,82 @@ export default function ChatInterface() {
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((e) => {
+  const handleDrop = useCallback(async (e) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const fileNames = files.map(f => f.name).join(', ');
-      setInput(prev => prev + (prev ? '\n' : '') + `[Attached: ${fileNames}]`);
+    await processFiles(files);
+  }, []);
+
+  // Process files for attachment
+  const processFiles = async (files) => {
+    for (const file of files) {
+      try {
+        const isImage = file.type.startsWith('image/');
+        const data = await fileToBase64(file);
+        
+        setAttachments(prev => [...prev, {
+          name: file.name,
+          type: isImage ? 'image' : 'file',
+          data: data,
+          mimeType: file.type,
+        }]);
+      } catch (error) {
+        console.error('Error processing file:', error);
+      }
+    }
+  };
+
+  // Handle file input change
+  const handleFileInputChange = async (e) => {
+    const files = Array.from(e.target.files);
+    await processFiles(files);
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // Handle paste (Ctrl+V)
+  const handlePaste = useCallback(async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const imageItems = Array.from(items).filter(item => item.type.startsWith('image/'));
+    
+    if (imageItems.length > 0) {
+      e.preventDefault();
+      
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          try {
+            const data = await fileToBase64(file);
+            setAttachments(prev => [...prev, {
+              name: `pasted-image-${Date.now()}.png`,
+              type: 'image',
+              data: data,
+              mimeType: file.type,
+            }]);
+          } catch (error) {
+            console.error('Error processing pasted image:', error);
+          }
+        }
+      }
     }
   }, []);
+
+  // Remove attachment
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Open file picker
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
 
   // AI-powered enhance
   const handleEnhancePrompt = async () => {
@@ -362,14 +503,30 @@ export default function ChatInterface() {
   };
 
   const handleSubmit = async () => {
-    if (!input.trim() || isLoading) return;
+    if ((!input.trim() && attachments.length === 0) || isLoading) return;
 
-    const userMessage = input.trim();
+    let userMessage = input.trim();
+    
+    // Add attachment info to message
+    if (attachments.length > 0) {
+      const attachmentInfo = attachments.map(a => `[${a.type}: ${a.name}]`).join(' ');
+      userMessage = userMessage ? `${userMessage}\n\n${attachmentInfo}` : attachmentInfo;
+    }
+    
     setInput('');
+    setAttachments([]);
 
     let chatId = currentChatId || createChat();
-    addMessage(chatId, { role: 'user', content: userMessage });
+    
+    // Create message with attachments
+    const messageData = {
+      role: 'user',
+      content: userMessage,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    };
+    addMessage(chatId, messageData);
     setIsLoading(true);
+    setIsWaitingForResponse(true);
 
     try {
       if (settings.generationMode === 'image') {
@@ -378,6 +535,8 @@ export default function ChatInterface() {
           apiKey: settings.apiKey,
         });
 
+        setIsWaitingForResponse(false);
+        
         if (result.type === 'base64' || result.type === 'url') {
           addToGallery({ type: result.type, data: result.data, prompt: userMessage });
           addMessage(chatId, { role: 'assistant', content: '', type: 'image', image: result });
@@ -392,6 +551,7 @@ export default function ChatInterface() {
         setStreamingMessageId(assistantMsgId);
 
         let fullContent = '';
+        let firstChunkReceived = false;
         for await (const chunk of streamChatCompletion(messages, {
           model: settings.currentModel,
           apiKey: settings.apiKey,
@@ -399,6 +559,10 @@ export default function ChatInterface() {
           temperature: settings.temperature,
           agentMode: settings.agentMode,
         })) {
+          if (!firstChunkReceived) {
+            firstChunkReceived = true;
+            setIsWaitingForResponse(false);
+          }
           fullContent += chunk;
           updateMessage(chatId, assistantMsgId, fullContent);
         }
@@ -421,6 +585,7 @@ export default function ChatInterface() {
       }
     } finally {
       setIsLoading(false);
+      setIsWaitingForResponse(false);
     }
   };
 
@@ -490,9 +655,10 @@ export default function ChatInterface() {
                 onToggleCollapse={toggleCollapse}
                 onRemake={message.role === 'assistant' ? handleRemake : null}
                 isRemaking={remakingMessageId === message.id}
+                isStreaming={streamingMessageId === message.id}
               />
             ))}
-            {isLoading && !streamingMessageId && <TypingIndicator />}
+            {isWaitingForResponse && <TypingIndicator />}
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -501,7 +667,10 @@ export default function ChatInterface() {
       {/* Floating Input with ambient glow */}
       <div className="p-5 pt-2">
         <div className="max-w-2xl mx-auto">
-          <div className={`ambient-glow ${input.trim() ? 'has-text' : ''}`}>
+          <div className={`ambient-glow ${input.trim() || attachments.length > 0 ? 'has-text' : ''}`}>
+            {/* Attachment preview */}
+            <AttachmentPreview attachments={attachments} onRemove={removeAttachment} />
+            
             <div className="chat-input-container items-center">
               {/* Mode Toggle */}
               <button
@@ -516,12 +685,23 @@ export default function ChatInterface() {
                 )}
               </button>
 
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.txt,.md,.json,.js,.jsx,.ts,.tsx,.py,.html,.css"
+                onChange={handleFileInputChange}
+                className="hidden"
+              />
+
               {/* Input */}
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={isImageMode ? "Describe an image..." : "Message..."}
                 className="input-minimal"
                 rows={1}
@@ -553,20 +733,26 @@ export default function ChatInterface() {
                 </span>
               </button>
 
-              {/* Upload hint */}
+              {/* Upload button */}
               <button
-                className="mode-toggle-btn flex-shrink-0 opacity-50 hover:opacity-100"
-                title="Drag & drop files"
+                onClick={openFilePicker}
+                className={`mode-toggle-btn flex-shrink-0 ${attachments.length > 0 ? 'text-white/60' : 'opacity-50 hover:opacity-100'}`}
+                title="Upload files (or drag & drop, or Ctrl+V)"
               >
                 <Upload className="w-4 h-4" />
+                {attachments.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-white/20 rounded-full text-[10px] flex items-center justify-center">
+                    {attachments.length}
+                  </span>
+                )}
               </button>
 
               {/* Send Button */}
               <button
                 onClick={handleSubmit}
-                disabled={isLoading || !input.trim()}
+                disabled={isLoading || (!input.trim() && attachments.length === 0)}
                 className={`flex-shrink-0 p-2 rounded-full transition-all ${
-                  input.trim() && !isLoading
+                  (input.trim() || attachments.length > 0) && !isLoading
                     ? 'bg-white text-black hover:bg-white/90 active:scale-95'
                     : 'bg-white/10 text-white/20'
                 }`}

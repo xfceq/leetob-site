@@ -19,6 +19,7 @@ export const useChatStore = create(
         temperature: 0.7,
         darkMode: true,
         agentMode: false,
+        webSearchMode: false, // Enable web search for queries
         currentModel: 'gemini-2.5-flash',
         currentImageModel: 'gemini-2.5-flash-image',
         generationMode: 'text', // 'text' or 'image'

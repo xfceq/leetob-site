@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "web-search": {
+      "command": "node",
+      "args": ["./mcp-web-search-server/build/index.js"],
+      "disabled": false,
+      "alwaysAllow": [
+        "web_search",
+        "fetch_url",
+        "get_current_time",
+        "get_weather",
+        "get_news",
+        "get_exchange_rate"
+      ]
+    }
+  }
+}

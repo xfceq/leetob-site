@@ -15,9 +15,10 @@ import {
   RefreshCw,
   PanelLeftClose,
   X,
+  Search,
 } from 'lucide-react';
 import useChatStore from '../store';
-import { streamChatCompletion, generateImage, TEXT_MODELS } from '../api';
+import { streamChatCompletion, generateImage, TEXT_MODELS, streamWebSearchCompletion, extractUrls } from '../api';
 import { agentManager } from '../AgentManager';
 import CodeBlock, { InlineCode } from './CodeBlock';
 import { ChatImage } from './Gallery';
@@ -186,10 +187,6 @@ const Message = memo(function Message({ message, isCollapsed, onToggleCollapse, 
         )}
       </div>
 
-      {/* Right dot for user messages */}
-      {isUser && (
-        <div className="w-1.5 h-1.5 rounded-full bg-white/20 mt-3 flex-shrink-0" />
-      )}
 
       {/* Remake button for AI messages - only show when not streaming */}
       {!isUser && onRemake && !isStreaming && (
@@ -300,6 +297,7 @@ export default function ChatInterface() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [remakingMessageId, setRemakingMessageId] = useState(null);
   const [isEnhanceHovered, setIsEnhanceHovered] = useState(false);
+  const [isWebSearchHovered, setIsWebSearchHovered] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
@@ -309,9 +307,30 @@ export default function ChatInterface() {
   const currentChat = getCurrentChat();
   const isImageMode = settings.generationMode === 'image';
 
+  // Track if user has manually scrolled up during streaming
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const messagesContainerRef = useRef(null);
+
+  // Handle scroll to detect if user scrolled up
+  const handleScroll = useCallback((e) => {
+    const container = e.target;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    setUserScrolledUp(!isNearBottom);
+  }, []);
+
+  // Only auto-scroll if user hasn't scrolled up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentChat?.messages]);
+    if (!userScrolledUp) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [currentChat?.messages, userScrolledUp]);
+
+  // Reset scroll tracking when streaming ends
+  useEffect(() => {
+    if (!streamingMessageId) {
+      setUserScrolledUp(false);
+    }
+  }, [streamingMessageId]);
 
   useEffect(() => {
     if (!currentChatId) createChat();
@@ -577,26 +596,54 @@ export default function ChatInterface() {
         }
       } else {
         const messages = currentChat?.messages.map(m => ({ role: m.role, content: m.content })) || [];
-        messages.push({ role: 'user', content: userMessage });
+        
+        // Detect URLs in the message for automatic analysis
+        const detectedUrls = extractUrls(userMessage);
+        const shouldUseWebSearch = settings.webSearchMode || detectedUrls.length > 0;
 
         const assistantMsgId = addMessage(chatId, { role: 'assistant', content: '' });
         setStreamingMessageId(assistantMsgId);
 
         let fullContent = '';
         let firstChunkReceived = false;
-        for await (const chunk of streamChatCompletion(messages, {
-          model: settings.currentModel,
-          apiKey: settings.apiKey,
-          systemPrompt: settings.systemPrompt,
-          temperature: settings.temperature,
-          agentMode: settings.agentMode,
-        })) {
-          if (!firstChunkReceived) {
-            firstChunkReceived = true;
-            setIsWaitingForResponse(false);
+        
+        // Use web search mode if enabled or URLs detected
+        if (shouldUseWebSearch) {
+          for await (const chunk of streamWebSearchCompletion(userMessage, detectedUrls, {
+            model: settings.currentModel,
+            apiKey: settings.apiKey,
+            systemPrompt: settings.systemPrompt,
+            temperature: settings.temperature,
+            previousMessages: messages,
+            userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          })) {
+            if (!firstChunkReceived) {
+              firstChunkReceived = true;
+              setIsWaitingForResponse(false);
+              // Clear the loading indicator
+              fullContent = '';
+            }
+            fullContent += chunk;
+            updateMessage(chatId, assistantMsgId, fullContent);
           }
-          fullContent += chunk;
-          updateMessage(chatId, assistantMsgId, fullContent);
+        } else {
+          // Standard chat completion
+          messages.push({ role: 'user', content: userMessage });
+          
+          for await (const chunk of streamChatCompletion(messages, {
+            model: settings.currentModel,
+            apiKey: settings.apiKey,
+            systemPrompt: settings.systemPrompt,
+            temperature: settings.temperature,
+            agentMode: settings.agentMode,
+          })) {
+            if (!firstChunkReceived) {
+              firstChunkReceived = true;
+              setIsWaitingForResponse(false);
+            }
+            fullContent += chunk;
+            updateMessage(chatId, assistantMsgId, fullContent);
+          }
         }
 
         setStreamingMessageId(null);
@@ -629,8 +676,14 @@ export default function ChatInterface() {
   };
 
   const toggleImageMode = () => {
-    updateSettings({ 
-      generationMode: isImageMode ? 'text' : 'image' 
+    updateSettings({
+      generationMode: isImageMode ? 'text' : 'image'
+    });
+  };
+
+  const toggleWebSearchMode = () => {
+    updateSettings({
+      webSearchMode: !settings.webSearchMode
     });
   };
 
@@ -672,6 +725,12 @@ export default function ChatInterface() {
         <div className="w-10 md:hidden" />
         
         <div className="flex items-center gap-2">
+          {settings.webSearchMode && (
+            <span className="badge badge-accent" style={{ background: 'rgba(59, 130, 246, 0.2)', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
+              <Search className="w-3 h-3 text-blue-400" />
+              <span className="text-blue-400">Live Search</span>
+            </span>
+          )}
           {settings.agentMode && (
             <span className="badge badge-accent">
               <Zap className="w-3 h-3" />
@@ -682,7 +741,11 @@ export default function ChatInterface() {
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-5 py-4 messages-container">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-5 py-4 messages-container"
+        onScroll={handleScroll}
+      >
         {!currentChat?.messages?.length ? (
           <div className="flex flex-col items-center justify-center h-full animate-fade-in">
             <div className="w-14 h-14 rounded-2xl glass flex items-center justify-center mb-4">
@@ -731,6 +794,28 @@ export default function ChatInterface() {
                 )}
               </button>
 
+              {/* Web Search Toggle */}
+              <button
+                onClick={toggleWebSearchMode}
+                onMouseEnter={() => setIsWebSearchHovered(true)}
+                onMouseLeave={() => setIsWebSearchHovered(false)}
+                className={`mode-toggle-btn flex-shrink-0 flex items-center gap-1 transition-all duration-200 ${
+                  settings.webSearchMode
+                    ? 'text-blue-400 bg-blue-400/10'
+                    : 'text-white/30 hover:text-white/60'
+                }`}
+                title={settings.webSearchMode ? 'Disable Live Search' : 'Enable Live Search'}
+              >
+                <Search className="w-4 h-4" />
+                <span
+                  className={`text-xs overflow-hidden whitespace-nowrap transition-all duration-200 ${
+                    isWebSearchHovered || settings.webSearchMode ? 'max-w-[50px] opacity-100' : 'max-w-0 opacity-0'
+                  }`}
+                >
+                  {settings.webSearchMode ? 'On' : 'Live'}
+                </span>
+              </button>
+
               {/* Hidden file input */}
               <input
                 ref={fileInputRef}
@@ -749,7 +834,13 @@ export default function ChatInterface() {
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
                 onFocus={handleInputFocus}
-                placeholder={isImageMode ? "Describe an image..." : "Message..."}
+                placeholder={
+                    isImageMode
+                      ? "Describe an image..."
+                      : settings.webSearchMode
+                        ? "Ask anything with live search..."
+                        : "Message..."
+                  }
                 className="input-minimal"
                 rows={1}
                 disabled={isLoading}

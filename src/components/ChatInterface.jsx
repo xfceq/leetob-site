@@ -590,8 +590,14 @@ export default function ChatInterface() {
         setIsWaitingForResponse(false);
         
         if (result.type === 'base64' || result.type === 'url') {
-          addToGallery({ type: result.type, data: result.data, prompt: userMessage });
-          addMessage(chatId, { role: 'assistant', content: '', type: 'image', image: result });
+          // Create image object with all needed properties
+          const imageData = {
+            type: result.type,
+            data: result.data,
+            prompt: userMessage
+          };
+          addToGallery(imageData);
+          addMessage(chatId, { role: 'assistant', content: '', type: 'image', image: imageData });
         } else {
           addMessage(chatId, { role: 'assistant', content: result.data });
         }

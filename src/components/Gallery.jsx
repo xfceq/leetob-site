@@ -43,22 +43,36 @@ export function ImageModal({ isOpen, onClose, image }) {
   const handleCopy = async () => {
     try {
       if (image.type === 'base64' || image.type === 'url') {
+        // Fetch the image data
         const response = await fetch(image.data);
         const blob = await response.blob();
+        
+        // Convert to PNG if needed for clipboard compatibility
+        const pngBlob = await new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            canvas.toBlob((b) => resolve(b), 'image/png');
+          };
+          img.onerror = () => resolve(blob); // Fallback to original blob
+          img.src = image.data;
+        });
+        
         await navigator.clipboard.write([
-          new ClipboardItem({ [blob.type]: blob })
+          new ClipboardItem({ 'image/png': pngBlob })
         ]);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }
     } catch (err) {
-      try {
-        await navigator.clipboard.writeText(image.data);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (e) {
-        console.error('Failed to copy:', e);
-      }
+      console.error('Failed to copy image:', err);
+      // Show error feedback but don't copy text
+      setCopied(false);
     }
   };
 

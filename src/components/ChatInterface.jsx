@@ -317,6 +317,38 @@ export default function ChatInterface() {
     if (!currentChatId) createChat();
   }, [currentChatId, createChat]);
 
+  // Handle mobile viewport height (for virtual keyboard)
+  useEffect(() => {
+    const setViewportHeight = () => {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    };
+
+    setViewportHeight();
+    window.addEventListener('resize', setViewportHeight);
+    
+    // Also listen for visual viewport changes (for mobile keyboard)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', setViewportHeight);
+    }
+
+    return () => {
+      window.removeEventListener('resize', setViewportHeight);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', setViewportHeight);
+      }
+    };
+  }, []);
+
+  // Scroll input into view when focused on mobile
+  const handleInputFocus = useCallback(() => {
+    if (window.innerWidth < 768) {
+      setTimeout(() => {
+        textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    }
+  }, []);
+
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
@@ -607,7 +639,7 @@ export default function ChatInterface() {
   };
 
   return (
-    <div 
+    <div
       ref={dropZoneRef}
       className={`flex-1 flex flex-col h-full bg-transparent drop-zone ${isDragging ? 'dragging' : ''}`}
       onDragEnter={handleDragEnter}
@@ -615,15 +647,29 @@ export default function ChatInterface() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {/* Fixed mobile menu button */}
+      {!sidebarOpen && (
+        <button
+          onClick={toggleSidebar}
+          className="fixed top-3 left-3 z-50 btn-icon md:hidden mobile-menu-btn"
+          title="Show sidebar"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      )}
+
       {/* Header with sidebar toggle */}
       <header className="flex items-center justify-between px-5 py-4">
-        <button onClick={toggleSidebar} className="btn-icon" title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
+        <button onClick={toggleSidebar} className="btn-icon hidden md:flex" title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
           {sidebarOpen ? (
             <PanelLeftClose className="w-5 h-5" />
           ) : (
             <Menu className="w-5 h-5" />
           )}
         </button>
+        
+        {/* Spacer for mobile when sidebar is closed */}
+        <div className="w-10 md:hidden" />
         
         <div className="flex items-center gap-2">
           {settings.agentMode && (
@@ -636,7 +682,7 @@ export default function ChatInterface() {
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      <div className="flex-1 overflow-y-auto px-5 py-4 messages-container">
         {!currentChat?.messages?.length ? (
           <div className="flex flex-col items-center justify-center h-full animate-fade-in">
             <div className="w-14 h-14 rounded-2xl glass flex items-center justify-center mb-4">
@@ -665,7 +711,7 @@ export default function ChatInterface() {
       </div>
 
       {/* Floating Input with ambient glow */}
-      <div className="p-5 pt-2">
+      <div className="p-5 pt-2 chat-input-wrapper">
         <div className="max-w-2xl mx-auto">
           <div className={`ambient-glow ${input.trim() || attachments.length > 0 ? 'has-text' : ''}`}>
             {/* Attachment preview */}
@@ -702,6 +748,7 @@ export default function ChatInterface() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
+                onFocus={handleInputFocus}
                 placeholder={isImageMode ? "Describe an image..." : "Message..."}
                 className="input-minimal"
                 rows={1}
